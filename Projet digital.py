@@ -132,6 +132,118 @@ print(records)
 records = read_data_quote(1)
 print(records)
 
+from sqlite3.dbapi2 import Cursor
+from fastapi import FastAPI, Request, HTTPException
+import uvicorn
+import sqlite3
+
+DBNAME = "database_proj.db"
+
+app = FastAPI()
+
+@app.post("/create-quote")
+async def createQuote(payload: Request):
+    values_dict = await payload.json()
+
+    # Open the DB
+    dbase = sqlite3.connect(DBNAME, isolation_level=None)
+    # Step 1: 
+
+    # check that the correct data is sent
+    # i.e. a subscription, a quantity, a price and a currency
+    if not ("subID" in values_dict) \
+            or not ("quantity" in values_dict) \
+            or not ("price" in values_dict)\
+            or not ("currency" in values_dict):
+        raise HTTPException(status_code=500, detail="Error: an error occured. Please try again.")
+
+
+    if type(values_dict["subID"]) is not int \
+        or type(values_dict["quantity"]) is not int \
+        or type(values_dict["price"]) is not float \
+        or type(values_dict["currency"]) is not str :
+        raise HTTPException(status_code=500, detail="Error: an error occured. Please try again.")
+
+    # make a db call to insert the quote into the quotes table
+    VATPrice = values_dict["price"] + values_dict["price"] * 21 / 100
+    try: 
+        dbase.cursor().execute(
+            ''' 
+            INSERT INTO quote(sub_id, quantity, price, currency)
+            VALUES(?,?,?,?)
+            ''', (values_dict["subID"], values_dict["quantity"], VATPrice, values_dict["currency"]))
+        return "Quote correcty inserted to Company {} with quantity {} and VAT price {} {}".format(values_dict["subID"],values_dict["quantity"],VATPrice,values_dict['currency']) 
+
+    except: 
+        raise HTTPException(status_code=500, detail="Error: an error occured. Please try again.")
+    finally:
+        # Close the DB
+        dbase.close()
+
+@app.post("/change-subscription-status")
+async def changeSubscriptionStatus(payload: Request):
+    values_dict = await payload.json()
+
+
+    # Open the DB
+    dbase = sqlite3.connect(DBNAME, isolation_level=None)
+    # Step 1: 
+
+    # check that the correst data is sent
+    # i.e. a company id, a customer id, and an activation status price 
+    if not ("companyID" in values_dict) \
+            or not ("customerID" in values_dict) \
+            or not ("activationStatus" in values_dict):
+        return "Error: an error occured. Please try again."
+
+    if type(values_dict["companyID"]) is not int \
+        or type(values_dict["customerID"]) is not int \
+        or type(values_dict["activationStatus"]) is not int :
+        return "Error: an error occured. Please try again."
+
+    # make a db call to insert the subscription into the subscription table
+    try: 
+        # check if a subscription exists for the given customer and company ids
+        query = dbase.execute('''SELECT * from subscription WHERE companies_id=? AND custom_id=?;''', (values_dict["companyID"], values_dict["customerID"]))
+        res = query.fetchone()
+        if not res :
+            dbase.execute(
+                ''' 
+                INSERT INTO subscription(companies_id, custom_id, activation_status)
+                VALUES(?,?,?)
+                ''', (values_dict["companyID"], values_dict["customerID"], values_dict["activationStatus"]))
+        else :
+            dbase.execute(
+                '''
+                UPDATE subscription
+                SET activation_status = ?
+                WHERE companies_id = ? AND custom_id = ?
+                ''', (values_dict["activationStatus"], values_dict["companyID"], values_dict["customerID"]))
+        return True
+    except: 
+        raise HTTPException(status_code=500, detail="Error: an error occured. Please try again.")
+    finally:
+        # Close the DB
+        dbase.close()
+
+
+@app.get("/get-pending-invoices")
+def getPendingInvoices(customerID: int):
+    # Open the DB
+    dbase = sqlite3.connect(DBNAME, isolation_level=None)
+    try:
+        query = dbase.execute('''SELECT * from invoice WHERE customer_id = ?;''', str(customerID))
+        res = query.fetchall()
+        return res
+    except:
+        raise HTTPException(status_code=500, detail="Error: an error occured. Please try again.")
+    finally:
+        # Close the DB
+        dbase.close()
+
+if __name__ == '__main__':
+    uvicorn.run(app, host='127.0.0.1', port=4000)
+
 dbase.close()
 print('Database Closed')
 
